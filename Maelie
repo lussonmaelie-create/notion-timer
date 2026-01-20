@@ -1,0 +1,261 @@
+index.html
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Notion Timer</title>
+
+  <!-- Inter = typo officielle de Notion -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #1f1f1f;
+      --card: #262626;
+      --border: #333;
+      --text: #ffffff;
+      --muted: #a1a1a1;
+      --button: #2f2f2f;
+      --button-hover: #3a3a3a;
+      --primary: #ffffff;
+      --primary-text: #000000;
+    }
+
+    * {
+      box-sizing: border-box;
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      max-width: 420px;
+    }
+
+    .time {
+      font-variant-numeric: tabular-nums;
+      font-size: 46px;
+      font-weight: 600;
+      margin: 8px 0 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    label {
+      font-size: 11px;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 110px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #1a1a1a;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    input:disabled {
+      opacity: 0.6;
+    }
+
+    button {
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--button);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.15s ease;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--button-hover);
+    }
+
+    button.primary {
+      background: var(--primary);
+      color: var(--primary-text);
+      border-color: var(--primary);
+      font-weight: 500;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .done {
+      color: #7ee787;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="time" id="display">00:05:00</div>
+    <p class="hint" id="status">Rentre une durée, puis Start.</p>
+
+    <div class="row">
+      <div>
+        <label for="minutes">Minutes</label>
+        <input id="minutes" type="number" min="0" step="1" value="5" />
+      </div>
+      <div>
+        <label for="seconds">Secondes</label>
+        <input id="seconds" type="number" min="0" max="59" step="1" value="0" />
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="primary" id="start">Start</button>
+      <button id="pause" disabled>Pause</button>
+      <button id="reset">Reset</button>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const display = $("display");
+    const status = $("status");
+    const minutesInput = $("minutes");
+    const secondsInput = $("seconds");
+    const startBtn = $("start");
+    const pauseBtn = $("pause");
+    const resetBtn = $("reset");
+
+    let remainingMs = 0;
+    let endAt = 0;
+    let timerId = null;
+
+    function clampSeconds() {
+      let s = parseInt(secondsInput.value || "0", 10);
+      if (Number.isNaN(s)) s = 0;
+      s = Math.min(59, Math.max(0, s));
+      secondsInput.value = String(s);
+      return s;
+    }
+
+    function getInputMs() {
+      const m = Math.max(0, parseInt(minutesInput.value || "0", 10) || 0);
+      const s = clampSeconds();
+      return (m * 60 + s) * 1000;
+    }
+
+    function format(ms) {
+      const totalSec = Math.max(0, Math.ceil(ms / 1000));
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(h)}:${pad(m)}:${pad(s)}`;
+    }
+
+    function render() {
+      display.textContent = format(remainingMs);
+    }
+
+    function setRunning(running) {
+      startBtn.disabled = running;
+      pauseBtn.disabled = !running;
+      minutesInput.disabled = running;
+      secondsInput.disabled = running;
+    }
+
+    function stopTimer() {
+      if (timerId) clearInterval(timerId);
+      timerId = null;
+    }
+
+    function tick() {
+      remainingMs = Math.max(0, endAt - Date.now());
+      render();
+
+      if (remainingMs <= 0) {
+        stopTimer();
+        setRunning(false);
+        status.textContent = "Terminé ✅";
+        status.classList.add("done");
+      }
+    }
+
+    function start() {
+      if (!timerId) {
+        if (remainingMs <= 0) remainingMs = getInputMs();
+        if (remainingMs <= 0) {
+          status.textContent = "Choisis une durée > 0.";
+          status.classList.remove("done");
+          return;
+        }
+
+        status.textContent = "En cours…";
+        status.classList.remove("done");
+        setRunning(true);
+
+        endAt = Date.now() + remainingMs;
+        stopTimer();
+        timerId = setInterval(tick, 200);
+        tick();
+      }
+    }
+
+    function pause() {
+      if (!timerId) return;
+      remainingMs = Math.max(0, endAt - Date.now());
+      stopTimer();
+      setRunning(false);
+      status.textContent = "En pause.";
+      status.classList.remove("done");
+      render();
+    }
+
+    function reset() {
+      stopTimer();
+      remainingMs = getInputMs();
+      setRunning(false);
+      status.textContent = "Rentre une durée, puis Start.";
+      status.classList.remove("done");
+      render();
+    }
+
+    startBtn.addEventListener("click", start);
+    pauseBtn.addEventListener("click", pause);
+    resetBtn.addEventListener("click", reset);
+
+    minutesInput.addEventListener("change", reset);
+    secondsInput.addEventListener("change", () => { clampSeconds(); reset(); });
+
+    reset();
+  </script>
+</body>
+</html>
